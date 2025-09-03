@@ -532,7 +532,7 @@
             return setItems.join(', ');
         }
         
-        function showAllLoaders() { document.querySelectorAll('.view-content').forEach(v => v.innerHTML = '<div class="flex justify-center items-center h-48"><div class="loader"></div></div>'); }
+        function showAllLoaders() { document.querySelectorAll('.view-content:not(#visualizations-view)').forEach(v => v.innerHTML = '<div class="flex justify-center items-center h-48"><div class="loader"></div></div>'); }
         
         function createToast(message, type = 'info') {
             const colors = { success: 'bg-green-600', error: 'bg-red-600', info: 'bg-blue-600' };

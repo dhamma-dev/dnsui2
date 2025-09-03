@@ -1,0 +1,5 @@
+{
+    "API_BASE_URL": "http://test.com",
+    "ORG_ID": "123",
+    "API_TOKEN": "dummy-token"
+}
