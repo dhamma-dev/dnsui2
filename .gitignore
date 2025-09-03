@@ -1,0 +1,21 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Database
+dns_data.db
+
+# Configuration
+config.json
+
+# Virtual Environments
+venv
+.venv
+env
+.env
+
+# IDEs
+.idea/
+.vscode/
