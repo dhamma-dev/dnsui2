@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DNS Monitoring Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/date-fns"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
     <style>
         .loader{border:4px solid #f3f3f3;border-top:4px solid #3498db;border-radius:50%;width:30px;height:30px;animation:spin 1s linear infinite}@keyframes spin{0%{transform:rotate(0)}100%{transform:rotate(360deg)}}.sortable{cursor:pointer;position:relative}.sortable:hover{background-color:#334155}.sort-icon{display:inline-block;margin-left:8px;opacity:.5;transition:opacity .2s}.sortable.sorted .sort-icon{opacity:1}#settings-modal{transition:opacity .3s ease}#toast-container{position:fixed;top:1.5rem;right:1.5rem;z-index:9999;display:flex;flex-direction:column;gap:0.5rem}.toast{opacity:0;transform:translateX(100%);transition:opacity .3s ease,transform .3s ease}.toast.show{opacity:1;transform:translateX(0)}.pagination-btn:disabled{opacity:.5;cursor:not-allowed}
     </style>
@@ -68,6 +71,7 @@
                 <button class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm border-transparent text-slate-400 hover:text-slate-300 hover:border-slate-400" data-view="domain-summary-view">Summary by Domain</button>
                 <button class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm border-transparent text-slate-400 hover:text-slate-300 hover:border-slate-400" data-view="server-summary-view">Summary by DNS Server</button>
                 <button class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm border-transparent text-slate-400 hover:text-slate-300 hover:border-slate-400" data-view="appliance-summary-view">Summary by Monitoring Point</button>
+                <button class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm border-transparent text-slate-400 hover:text-slate-300 hover:border-slate-400" data-view="visualizations-view">Visualizations</button>
             </nav>
         </div>
 
@@ -153,6 +157,14 @@
                 <div id="domain-summary-view" class="view-content hidden bg-slate-800 p-4 rounded-lg shadow-lg overflow-x-auto"></div>
                 <div id="server-summary-view" class="view-content hidden bg-slate-800 p-4 rounded-lg shadow-lg overflow-x-auto"></div>
                 <div id="appliance-summary-view" class="view-content hidden bg-slate-800 p-4 rounded-lg shadow-lg overflow-x-auto"></div>
+                <div id="visualizations-view" class="view-content hidden bg-slate-800 p-4 rounded-lg shadow-lg">
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <div class="bg-slate-800 p-4 rounded-lg shadow-lg"><h3 class="text-lg font-semibold text-white mb-4">Latency Over Time</h3><canvas id="latency-chart"></canvas></div>
+                        <div class="bg-slate-800 p-4 rounded-lg shadow-lg"><h3 class="text-lg font-semibold text-white mb-4">Success vs. Failure</h3><canvas id="success-pie-chart"></canvas></div>
+                        <div class="bg-slate-800 p-4 rounded-lg shadow-lg"><h3 class="text-lg font-semibold text-white mb-4">Top 5 Slowest Domains (Avg Latency)</h3><canvas id="top-slow-domains-chart"></canvas></div>
+                        <div class="bg-slate-800 p-4 rounded-lg shadow-lg"><h3 class="text-lg font-semibold text-white mb-4">Top 5 Failing Domains</h3><canvas id="top-failing-domains-chart"></canvas></div>
+                    </div>
+                </div>
             `;
             document.querySelectorAll('.view-content').forEach(view => {
                  view.addEventListener('click', (e) => {
@@ -175,6 +187,7 @@
                 const response = await fetch('/api/data');
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 state.fullDataset = await response.json();
+                console.log("Data fetched successfully:", state.fullDataset);
             } catch (error) {
                 console.error("Failed to fetch data:", error);
                 createToast("Failed to fetch data. Check API config and server logs.", "error");
@@ -357,6 +370,7 @@
             renderDomainSummary(data);
             renderServerSummary(data);
             renderApplianceSummary(data);
+            renderVisualizations(data);
             updateSortIcons();
         }
 
@@ -532,6 +546,82 @@
                 toast.addEventListener('transitionend', () => toast.remove());
             }, 5000);
         }
+
+        // --- CHART RENDERING ---
+        const charts = {}; // To hold chart instances
+
+        function renderVisualizations(data) {
+            // Chart data processing
+            const latencyData = data.map(d => ({x: new Date(d.timestamp * 1000), y: d.resolution_time_ms})).sort((a,b) => a.x - b.x);
+            const totalFailures = data.filter(r => r.response_code !== 'NOERROR').length;
+            const totalSuccess = data.length - totalFailures;
+
+            const domainSummary = aggregateBy(data, 'target_domain');
+            const topSlowDomains = Object.values(domainSummary).sort((a,b) => b.avgLatency - a.avgLatency).slice(0, 5);
+            const topFailingDomains = Object.values(domainSummary).sort((a,b) => b.failures - a.failures).filter(d => d.failures > 0).slice(0, 5);
+
+            // Render charts
+            renderLineChart('latency-chart', latencyData, 'Latency (ms)');
+            renderPieChart('success-pie-chart', [totalSuccess, totalFailures], ['Success', 'Failure']);
+            renderBarChart('top-slow-domains-chart', topSlowDomains.map(d=>d.domain), topSlowDomains.map(d=>d.avgLatency.toFixed(0)), 'Avg Latency (ms)');
+            renderBarChart('top-failing-domains-chart', topFailingDomains.map(d=>d.domain), topFailingDomains.map(d=>d.failures), 'Failure Count');
+        }
+
+        function renderChart(canvasId, type, data, options) {
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            if (charts[canvasId]) {
+                charts[canvasId].data = data;
+                charts[canvasId].update();
+            } else {
+                charts[canvasId] = new Chart(ctx, { type, data, options });
+            }
+        }
+
+        function renderLineChart(canvasId, data, label) {
+            renderChart(canvasId, 'line', {
+                datasets: [{
+                    label: label,
+                    data: data,
+                    borderColor: 'rgb(59, 130, 246)',
+                    backgroundColor: 'rgba(59, 130, 246, 0.5)',
+                    tension: 0.1
+                }]
+            }, {
+                 scales: { x: { type: 'time', time: { unit: 'minute' }, ticks: { color: '#94a3b8' } }, y: { ticks: { color: '#94a3b8' } } },
+                 plugins: { legend: { labels: { color: '#94a3b8' } } }
+            });
+        }
+
+        function renderPieChart(canvasId, data, labels) {
+            renderChart(canvasId, 'pie', {
+                labels: labels,
+                datasets: [{
+                    data: data,
+                    backgroundColor: ['rgb(16, 185, 129)', 'rgb(239, 68, 68)'],
+                    hoverOffset: 4
+                }]
+            }, {
+                plugins: { legend: { position: 'top', labels: { color: '#94a3b8' } } }
+            });
+        }
+
+        function renderBarChart(canvasId, labels, data, label) {
+             renderChart(canvasId, 'bar', {
+                labels: labels,
+                datasets: [{
+                    label: label,
+                    data: data,
+                    backgroundColor: 'rgba(59, 130, 246, 0.5)',
+                    borderColor: 'rgb(59, 130, 246)',
+                    borderWidth: 1
+                }]
+            }, {
+                indexAxis: 'y',
+                scales: { x: { ticks: { color: '#94a3b8' } }, y: { ticks: { color: '#94a3b8' } } },
+                plugins: { legend: { display: false } }
+            });
+        }
+
     </script>
 </body>
 </html>
