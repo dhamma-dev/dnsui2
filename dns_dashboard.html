@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DNS Monitoring Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .loader{border:4px solid #f3f3f3;border-top:4px solid #3498db;border-radius:50%;width:30px;height:30px;animation:spin 1s linear infinite}@keyframes spin{0%{transform:rotate(0)}100%{transform:rotate(360deg)}}.sortable{cursor:pointer;position:relative}.sortable:hover{background-color:#334155}.sort-icon{display:inline-block;margin-left:8px;opacity:.5;transition:opacity .2s}.sortable.sorted .sort-icon{opacity:1}#settings-modal{transition:opacity .3s ease}#toast-container{position:fixed;top:1.5rem;right:1.5rem;z-index:9999;display:flex;flex-direction:column;gap:0.5rem}.toast{opacity:0;transform:translateX(100%);transition:opacity .3s ease,transform .3s ease}.toast.show{opacity:1;transform:translateX(0)}.pagination-btn:disabled{opacity:.5;cursor:not-allowed}
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-300 font-sans">
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container"></div>
+
+    <!-- Main Container -->
+    <div class="container mx-auto p-4 md:p-8">
+        <header class="mb-8 flex justify-between items-start">
+            <div>
+                <h1 class="text-3xl font-bold text-white">DNS Monitoring Dashboard</h1>
+                <p id="last-synced" class="text-slate-500 text-sm mt-1">Loading status...</p>
+            </div>
+            <div>
+                <button id="settings-btn" class="p-2 rounded-full hover:bg-slate-700" title="Settings">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                </button>
+            </div>
+        </header>
+
+        <!-- Filters Section -->
+        <div class="bg-slate-800 p-4 rounded-lg shadow-lg mb-8">
+            <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                <div>
+                    <label for="domain-filter" class="block text-sm font-medium text-slate-400 mb-1">Target Domain</label>
+                    <select id="domain-filter" class="w-full bg-slate-700 border-slate-600 rounded-md shadow-sm p-2 text-white"></select>
+                </div>
+                <div>
+                    <label for="server-filter" class="block text-sm font-medium text-slate-400 mb-1">DNS Server</label>
+                    <select id="server-filter" class="w-full bg-slate-700 border-slate-600 rounded-md shadow-sm p-2 text-white"></select>
+                </div>
+                <div>
+                    <label for="appliance-filter" class="block text-sm font-medium text-slate-400 mb-1">Monitoring Point</label>
+                    <select id="appliance-filter" class="w-full bg-slate-700 border-slate-600 rounded-md shadow-sm p-2 text-white"></select>
+                </div>
+                <div>
+                    <label for="record-type-filter" class="block text-sm font-medium text-slate-400 mb-1">Record Type</label>
+                    <select id="record-type-filter" class="w-full bg-slate-700 border-slate-600 rounded-md shadow-sm p-2 text-white"></select>
+                </div>
+                <div>
+                    <label for="response-code-filter" class="block text-sm font-medium text-slate-400 mb-1">Response Code</label>
+                    <select id="response-code-filter" class="w-full bg-slate-700 border-slate-600 rounded-md shadow-sm p-2 text-white"></select>
+                </div>
+            </div>
+             <div class="mt-4 flex justify-between items-center">
+                <button id="clear-filters-btn" class="text-slate-400 hover:text-white text-sm">Clear Filters</button>
+                <button id="apply-filters-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg">Apply Filters</button>
+            </div>
+        </div>
+        
+        <!-- Summary KPI Section -->
+        <div id="summary-section" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8"></div>
+
+        <!-- View Navigation Tabs -->
+        <div class="mb-4 border-b border-slate-700">
+            <nav class="-mb-px flex space-x-8" aria-label="Tabs">
+                <button class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm border-blue-500 text-blue-400" data-view="results-log-view">Results Log</button>
+                <button class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm border-transparent text-slate-400 hover:text-slate-300 hover:border-slate-400" data-view="domain-summary-view">Summary by Domain</button>
+                <button class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm border-transparent text-slate-400 hover:text-slate-300 hover:border-slate-400" data-view="server-summary-view">Summary by DNS Server</button>
+                <button class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm border-transparent text-slate-400 hover:text-slate-300 hover:border-slate-400" data-view="appliance-summary-view">Summary by Monitoring Point</button>
+            </nav>
+        </div>
+
+        <!-- View Containers -->
+        <div id="view-container"></div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center hidden z-50 pointer-events-none opacity-0">
+        <div class="bg-slate-800 rounded-lg shadow-xl p-6 w-full max-w-md m-4">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold text-white">API Configuration</h2>
+                <button id="close-settings-btn" class="p-1 rounded-full hover:bg-slate-700 text-2xl leading-none">&times;</button>
+            </div>
+            <div class="space-y-4">
+                <div>
+                    <label for="api-base-url" class="block text-sm font-medium text-slate-400 mb-1">Base URL</label>
+                    <input type="text" id="api-base-url" placeholder="https://demo.pm.appneta.com/api/v3" class="w-full bg-slate-700 border-slate-600 rounded-md shadow-sm p-2 text-white">
+                </div>
+                <div>
+                    <label for="api-org-id" class="block text-sm font-medium text-slate-400 mb-1">Organization ID</label>
+                    <input type="number" id="api-org-id" placeholder="3" class="w-full bg-slate-700 border-slate-600 rounded-md shadow-sm p-2 text-white">
+                </div>
+                 <div>
+                    <label for="api-token" class="block text-sm font-medium text-slate-400 mb-1">Bearer Token</label>
+                    <input type="password" id="api-token" placeholder="Token value hidden" class="w-full bg-slate-700 border-slate-600 rounded-md shadow-sm p-2 text-white">
+                </div>
+            </div>
+            <div class="mt-6 flex justify-between items-center">
+                 <button id="run-sync-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg flex items-center gap-2">
+                    <span id="sync-text">Run Manual Sync</span>
+                    <span id="sync-loader" class="hidden loader" style="width:20px; height:20px; border-width: 2px;"></span>
+                </button>
+                <button id="save-settings-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg">Save</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // --- APPLICATION STATE & CONSTANTS ---
+        const state = {
+            activeView: 'results-log-view',
+            sort: { column: 'timestamp', direction: 'desc' },
+            filters: { domain: '', server: '', appliance: '', recordType: '', responseCode: '' },
+            fullDataset: [],
+            pagination: { currentPage: 1, recordsPerPage: 100 }
+        };
+        const viewContainer = document.getElementById('view-container');
+
+        // --- INITIALIZATION ---
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeEventListeners();
+            initializeViews();
+            loadConfigAndData();
+        });
+
+        function initializeEventListeners() {
+            document.getElementById('apply-filters-btn').addEventListener('click', () => { updateFiltersFromUI(); state.pagination.currentPage = 1; renderAllViews(); });
+            document.getElementById('clear-filters-btn').addEventListener('click', () => { clearFiltersAndRender(); state.pagination.currentPage = 1; renderAllViews(); });
+            document.querySelectorAll('.tab-btn').forEach(button => button.addEventListener('click', handleTabClick));
+            
+            document.getElementById('settings-btn').addEventListener('click', openSettingsModal);
+            document.getElementById('close-settings-btn').addEventListener('click', closeSettingsModal);
+            document.getElementById('save-settings-btn').addEventListener('click', saveSettings);
+            document.getElementById('run-sync-btn').addEventListener('click', runManualSync);
+
+            // Event delegation for pagination buttons
+            viewContainer.addEventListener('click', (e) => {
+                if (e.target.id === 'prev-page-btn') {
+                    state.pagination.currentPage--;
+                    renderAllViews();
+                }
+                if (e.target.id === 'next-page-btn') {
+                    state.pagination.currentPage++;
+                    renderAllViews();
+                }
+            });
+        }
+
+        function initializeViews() {
+            viewContainer.innerHTML = `
+                <div id="results-log-view" class="view-content bg-slate-800 p-4 rounded-lg shadow-lg overflow-x-auto"></div>
+                <div id="domain-summary-view" class="view-content hidden bg-slate-800 p-4 rounded-lg shadow-lg overflow-x-auto"></div>
+                <div id="server-summary-view" class="view-content hidden bg-slate-800 p-4 rounded-lg shadow-lg overflow-x-auto"></div>
+                <div id="appliance-summary-view" class="view-content hidden bg-slate-800 p-4 rounded-lg shadow-lg overflow-x-auto"></div>
+            `;
+            document.querySelectorAll('.view-content').forEach(view => {
+                 view.addEventListener('click', (e) => {
+                    if (e.target.closest('.sortable')) handleSortClick(e);
+                 });
+            });
+        }
+        
+        async function loadConfigAndData() {
+            showAllLoaders();
+            await loadSettings();
+            await fetchData();
+            populateFilters(state.fullDataset);
+            state.pagination.currentPage = 1;
+            renderAllViews();
+        }
+
+        async function fetchData() {
+            try {
+                const response = await fetch('/api/data');
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                state.fullDataset = await response.json();
+            } catch (error) {
+                console.error("Failed to fetch data:", error);
+                createToast("Failed to fetch data. Check API config and server logs.", "error");
+                state.fullDataset = [];
+            }
+        }
+        
+        // --- SETTINGS & SYNC LOGIC ---
+        
+        function openSettingsModal() { document.getElementById('settings-modal').classList.remove('hidden', 'opacity-0', 'pointer-events-none'); }
+        function closeSettingsModal() { document.getElementById('settings-modal').classList.add('hidden', 'opacity-0', 'pointer-events-none'); }
+
+        async function loadSettings() {
+            try {
+                const response = await fetch('/api/config');
+                const config = await response.json();
+                document.getElementById('api-base-url').value = config.API_BASE_URL || '';
+                document.getElementById('api-org-id').value = config.ORG_ID || '';
+                updateSyncStatus(config.LAST_SYNCED_UTC);
+            } catch (error) {
+                console.error("Could not load settings:", error);
+                updateSyncStatus(null);
+            }
+        }
+        
+        function updateSyncStatus(syncTime) {
+            const syncEl = document.getElementById('last-synced');
+            if (syncTime) {
+                const date = new Date(syncTime);
+                syncEl.textContent = `Last Synced: ${date.toLocaleString()}`;
+            } else {
+                syncEl.textContent = 'Data has not been synced yet.';
+            }
+        }
+
+        async function saveSettings() {
+            const config = {
+                API_BASE_URL: document.getElementById('api-base-url').value,
+                ORG_ID: document.getElementById('api-org-id').value,
+                API_TOKEN: document.getElementById('api-token').value
+            };
+
+            try {
+                const response = await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(config) });
+                if (!response.ok) throw new Error('Failed to save');
+                createToast('Settings saved successfully!', 'success');
+                document.getElementById('api-token').value = '';
+                closeSettingsModal();
+            } catch (error) {
+                 createToast('Error saving settings.', 'error');
+                 console.error("Save settings error:", error);
+            }
+        }
+
+        async function runManualSync() {
+            const syncBtn = document.getElementById('run-sync-btn'), syncText = document.getElementById('sync-text'), syncLoader = document.getElementById('sync-loader');
+            syncBtn.disabled = true;
+            syncText.textContent = 'Syncing...';
+            syncLoader.classList.remove('hidden');
+
+            try {
+                const response = await fetch('/api/run-ingestion', { method: 'POST' });
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.error || 'Sync failed');
+                createToast(`Sync complete!`, 'success');
+                await loadConfigAndData();
+                closeSettingsModal();
+            } catch (error) {
+                createToast(`Sync failed: ${error.message}`, 'error');
+                console.error("Sync error:", error);
+            } finally {
+                syncBtn.disabled = false;
+                syncText.textContent = 'Run Manual Sync';
+                syncLoader.classList.add('hidden');
+            }
+        }
+
+        // --- STATE & FILTER MANAGEMENT ---
+        function updateFiltersFromUI() {
+            state.filters = {
+                domain: document.getElementById('domain-filter').value,
+                server: document.getElementById('server-filter').value,
+                appliance: document.getElementById('appliance-filter').value,
+                recordType: document.getElementById('record-type-filter').value,
+                responseCode: document.getElementById('response-code-filter').value
+            };
+        }
+
+        function updateUIFromFilters() {
+            for (const key in state.filters) {
+                const elementId = `${key.replace('recordType', 'record-type').replace('responseCode', 'response-code')}-filter`;
+                const element = document.getElementById(elementId);
+                if (element) {
+                    element.value = state.filters[key];
+                } else {
+                    console.error(`Could not find filter element with ID: ${elementId}`);
+                }
+            }
+        }
+
+        function clearFiltersAndRender() {
+            state.filters = { domain: '', server: '', appliance: '', recordType: '', responseCode: '' };
+            updateUIFromFilters();
+        }
+
+        function applyFilterAndSwitchView(key, value) {
+            clearFiltersAndRender();
+            state.filters[key] = (key === 'responseCode' && value === 'FAILED') ? 'FAILED' : value;
+            updateUIFromFilters();
+            switchTab('results-log-view');
+            state.pagination.currentPage = 1;
+            renderAllViews();
+        }
+
+        // --- UI EVENT HANDLERS ---
+        function handleTabClick(event) { switchTab(event.target.dataset.view); }
+        function switchTab(viewId) {
+             state.activeView = viewId;
+             document.querySelectorAll('.tab-btn').forEach(btn => {
+                const isSelected = btn.dataset.view === viewId;
+                btn.classList.toggle('border-blue-500', isSelected);
+                btn.classList.toggle('text-blue-400', isSelected);
+                btn.classList.toggle('border-transparent', !isSelected);
+                btn.classList.toggle('text-slate-400', !isSelected);
+            });
+            document.querySelectorAll('.view-content').forEach(view => view.classList.toggle('hidden', view.id !== viewId));
+        }
+
+        function handleSortClick(event) {
+            const header = event.target.closest('.sortable');
+            if (!header) return;
+            const newColumn = header.dataset.sort;
+            if (state.sort.column === newColumn) {
+                state.sort.direction = state.sort.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                state.sort.column = newColumn;
+                state.sort.direction = 'desc';
+            }
+            renderAllViews();
+        }
+
+        // --- DYNAMIC CONTENT POPULATION ---
+        function populateFilters(data) {
+            const options = {
+                domains: [...new Set(data.map(d => d.target_domain))],
+                servers: [...new Set(data.map(d => d.dns_server))],
+                appliances: [...new Set(data.map(d => d.appliance_name))],
+                recordTypes: [...new Set(data.map(d => d.record_type))],
+                responseCodes: [...new Set(data.map(d => d.response_code))]
+            };
+            populateSelect('domain-filter', options.domains);
+            populateSelect('server-filter', options.servers);
+            populateSelect('appliance-filter', options.appliances);
+            populateSelect('record-type-filter', options.recordTypes);
+            populateSelect('response-code-filter', options.responseCodes);
+        }
+        
+        function populateSelect(elementId, values) {
+            const select = document.getElementById(elementId);
+            select.innerHTML = `<option value="">All ${select.previousElementSibling.textContent.replace(/Target |Monitoring /g,'')}</option>`;
+            values.sort().forEach(value => {
+                if(value) select.add(new Option(value, value));
+            });
+            updateUIFromFilters();
+        }
+
+        // --- CORE RENDER LOGIC ---
+        function renderAllViews() {
+            let data = state.fullDataset.filter(row => 
+                Object.entries(state.filters).every(([key, value]) => {
+                    if (value === '') return true;
+                    const rowKey = key.replace('appliance','appliance_name').replace('recordType','record_type').replace('responseCode','response_code').replace('domain','target_domain').replace('server','dns_server');
+                    if (value === 'FAILED') return row.response_code !== 'NOERROR';
+                    return row[rowKey] === value;
+                })
+            );
+            
+            renderSummaryCards(data);
+            renderResultsLog(data);
+            renderDomainSummary(data);
+            renderServerSummary(data);
+            renderApplianceSummary(data);
+            updateSortIcons();
+        }
+
+        function renderSummaryCards(data) {
+            const totalTests = data.length, totalFailures = data.filter(r => r.response_code !== 'NOERROR').length;
+            const successRate = totalTests ? ((totalTests - totalFailures) / totalTests * 100).toFixed(2) : '100.00';
+            const avgLatency = totalTests ? (data.reduce((acc, r) => acc + r.resolution_time_ms, 0) / totalTests).toFixed(0) : 0;
+            document.getElementById('summary-section').innerHTML = `
+                <div class="bg-slate-800 p-4 rounded-lg shadow"><h3 class="text-sm font-medium text-slate-400">Success Rate</h3><p class="mt-1 text-3xl font-semibold text-green-400">${successRate}%</p></div>
+                <div class="bg-slate-800 p-4 rounded-lg shadow"><h3 class="text-sm font-medium text-slate-400">Avg. Latency</h3><p class="mt-1 text-3xl font-semibold text-white">${avgLatency} ms</p></div>
+                <div class="bg-slate-800 p-4 rounded-lg shadow hover:bg-slate-700 cursor-pointer" onclick="applyFilterAndSwitchView('responseCode', 'FAILED')"><h3 class="text-sm font-medium text-slate-400">Total Failures</h3><p class="mt-1 text-3xl font-semibold ${totalFailures > 0 ? 'text-red-400' : 'text-white'}">${totalFailures}</p></div>
+                <div class="bg-slate-800 p-4 rounded-lg shadow"><h3 class="text-sm font-medium text-slate-400">Total Tests</h3><p class="mt-1 text-3xl font-semibold text-white">${totalTests}</p></div>
+            `;
+        }
+        
+        // --- TABLE RENDER FUNCTIONS ---
+        const tableSkeletons = {
+            resultsLog: `<table class="min-w-full divide-y divide-slate-700" id="results-table"><thead class="bg-slate-700"><tr><th class="sortable px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider" data-sort="timestamp">Timestamp <span class="sort-icon"></span></th><th class="sortable px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider" data-sort="appliance_name">Monitoring Point <span class="sort-icon"></span></th><th class="sortable px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider" data-sort="target_domain">Target Domain <span class="sort-icon"></span></th><th class="sortable px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider" data-sort="dns_server">DNS Server <span class="sort-icon"></span></th><th class="sortable px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider" data-sort="record_type">Type <span class="sort-icon"></span></th><th class="sortable px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider" data-sort="response_code">Response <span class="sort-icon"></span></th><th class="sortable px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider" data-sort="resolution_time_ms">Time (ms) <span class="sort-icon"></span></th><th class="px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Resolved IPs</th></tr></thead><tbody id="results-tbody" class="bg-slate-800 divide-y divide-slate-700"></tbody></table>`,
+            domainSummary: `<table class="min-w-full divide-y divide-slate-700" id="domain-summary-table"><thead class="bg-slate-700"><tr><th class="sortable px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider" data-sort="domain">Target Domain <span class="sort-icon"></span></th><th class="sortable px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider" data-sort="total">Total Tests <span class="sort-icon"></span></th><th class="sortable px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider" data-sort="failures">Failures <span class="sort-icon"></span></th><th class="sortable px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider" data-sort="failureRate">Failure Rate <span class="sort-icon"></span></th><th class="sortable px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider" data-sort="avgLatency">Avg. Latency (ms) <span class="sort-icon"></span></th></tr></thead><tbody id="domain-summary-tbody" class="bg-slate-800 divide-y divide-slate-700"></tbody></table>`,
+            serverSummary: `<table class="min-w-full divide-y divide-slate-700" id="server-summary-table"><thead class="bg-slate-700"><tr><th class="sortable px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider" data-sort="server">DNS Server <span class="sort-icon"></span></th><th class="sortable px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider" data-sort="total">Total Tests <span class="sort-icon"></span></th><th class="sortable px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider" data-sort="failures">Failures <span class="sort-icon"></span></th><th class="sortable px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider" data-sort="failureRate">Failure Rate <span class="sort-icon"></span></th><th class="sortable px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider" data-sort="avgLatency">Avg. Latency (ms) <span class="sort-icon"></span></th></tr></thead><tbody id="server-summary-tbody" class="bg-slate-800 divide-y divide-slate-700"></tbody></table>`,
+            applianceSummary: `<table class="min-w-full divide-y divide-slate-700" id="appliance-summary-table"><thead class="bg-slate-700"><tr><th class="sortable px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider" data-sort="name">Monitoring Point <span class="sort-icon"></span></th><th class="sortable px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider" data-sort="total">Total Tests <span class="sort-icon"></span></th><th class="sortable px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider" data-sort="failures">Failures <span class="sort-icon"></span></th><th class="px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Tested Domains</th><th class="px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Tested DNS Servers</th></tr></thead><tbody id="appliance-summary-tbody" class="bg-slate-800 divide-y divide-slate-700"></tbody></table>`,
+        };
+        function renderTable(viewId, tbodyId, data, rowTemplate, filterValueKey, filterColumnKey) {
+            const view = document.getElementById(viewId);
+            view.innerHTML = tableSkeletons[viewId.replace('-view','').replace(/-(\w)/g, (m, p1) => p1.toUpperCase())];
+            const tbody = view.querySelector('tbody');
+            if (data.length === 0) {
+                const colspan = tbody.previousElementSibling.firstElementChild.children.length;
+                tbody.innerHTML = `<tr><td colspan="${colspan}" class="text-center py-8">No results found for the current filters.</td></tr>`;
+                return;
+            }
+            data.forEach(item => {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-slate-700';
+                if (filterValueKey) {
+                    tr.className += ' cursor-pointer';
+                    tr.onclick = () => applyFilterAndSwitchView(filterColumnKey, item[filterValueKey]);
+                }
+                tr.innerHTML = rowTemplate(item);
+                tbody.appendChild(tr);
+            });
+        }
+        function renderResultsLog(data) {
+            const totalRecords = data.length;
+            const totalPages = Math.ceil(totalRecords / state.pagination.recordsPerPage);
+            const startIndex = (state.pagination.currentPage - 1) * state.pagination.recordsPerPage;
+            const endIndex = startIndex + state.pagination.recordsPerPage;
+            
+            const sortedData = sortData(data, state.sort.column, state.sort.direction);
+            const pageData = sortedData.slice(startIndex, endIndex);
+
+            renderTable('results-log-view', 'results-tbody', pageData, row => `<td class="px-6 py-4 whitespace-nowrap text-sm">${new Date(row.timestamp * 1000).toLocaleString()}</td><td class="px-6 py-4 whitespace-nowrap text-sm">${row.appliance_name}</td><td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">${row.target_domain}</td><td class="px-6 py-4 whitespace-nowrap text-sm">${row.dns_server}</td><td class="px-6 py-4 whitespace-nowrap text-sm">${row.record_type}</td><td class="px-6 py-4 whitespace-nowrap text-sm"><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${row.response_code === 'NOERROR' ? 'bg-green-800 text-green-200' : 'bg-red-800 text-red-200'}">${row.response_code}</span></td><td class="px-6 py-4 whitespace-nowrap text-sm">${row.resolution_time_ms}</td><td class="px-6 py-4 whitespace-nowrap text-sm text-slate-400" title="${renderIps(row.resolved_ips, true)}">${renderIps(row.resolved_ips)}</td>`);
+            renderPaginationControls(totalRecords, totalPages);
+        }
+
+        function renderPaginationControls(totalRecords, totalPages) {
+            const container = document.getElementById('results-log-view');
+            let paginationHtml = '';
+            if (totalPages > 1) {
+                paginationHtml = `
+                    <div class="flex items-center justify-between mt-4 text-sm">
+                        <button id="prev-page-btn" class="pagination-btn bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-lg" ${state.pagination.currentPage === 1 ? 'disabled' : ''}>Previous</button>
+                        <span>Page ${state.pagination.currentPage} of ${totalPages} (Total: ${totalRecords} records)</span>
+                        <button id="next-page-btn" class="pagination-btn bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-lg" ${state.pagination.currentPage === totalPages ? 'disabled' : ''}>Next</button>
+                    </div>
+                `;
+            }
+            // Ensure we don't add duplicate pagination controls
+            const existingPagination = container.querySelector('.flex.items-center.justify-between.mt-4');
+            if (existingPagination) existingPagination.remove();
+            
+            container.insertAdjacentHTML('beforeend', paginationHtml);
+        }
+
+        function renderDomainSummary(data) {
+            const summary = aggregateBy(data, 'target_domain');
+            const sorted = sortData(Object.values(summary), state.sort.column, state.sort.direction);
+            renderTable('domain-summary-view', 'domain-summary-tbody', sorted, item => `<td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">${item.domain}</td><td class="px-6 py-4 whitespace-nowrap text-sm">${item.total}</td><td class="px-6 py-4 whitespace-nowrap text-sm ${item.failures > 0 ? 'text-red-400 font-bold' : ''}">${item.failures}</td><td class="px-6 py-4 whitespace-nowrap text-sm">${item.failureRate.toFixed(2)}%</td><td class="px-6 py-4 whitespace-nowrap text-sm">${item.avgLatency.toFixed(0)} ms</td>`, 'domain', 'domain');
+        }
+        function renderServerSummary(data) {
+            const summary = aggregateBy(data, 'dns_server');
+            const sorted = sortData(Object.values(summary), state.sort.column, state.sort.direction);
+            renderTable('server-summary-view', 'server-summary-tbody', sorted, item => `<td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">${item.server}</td><td class="px-6 py-4 whitespace-nowrap text-sm">${item.total}</td><td class="px-6 py-4 whitespace-nowrap text-sm ${item.failures > 0 ? 'text-red-400 font-bold' : ''}">${item.failures}</td><td class="px-6 py-4 whitespace-nowrap text-sm">${item.failureRate.toFixed(2)}%</td><td class="px-6 py-4 whitespace-nowrap text-sm">${item.avgLatency.toFixed(0)} ms</td>`, 'server', 'server');
+        }
+        function renderApplianceSummary(data) {
+            const summary = aggregateBy(data, 'appliance_name');
+            const sorted = sortData(Object.values(summary), state.sort.column, state.sort.direction);
+            renderTable('appliance-summary-view', 'appliance-summary-tbody', sorted, item => `<td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">${item.name}</td><td class="px-6 py-4 whitespace-nowrap text-sm">${item.total}</td><td class="px-6 py-4 whitespace-nowrap text-sm ${item.failures > 0 ? 'text-red-400 font-bold' : ''}">${item.failures}</td><td class="px-6 py-4 text-sm text-slate-400" title="${[...item.sets.target_domain].join(', ')}">${renderSet([...item.sets.target_domain])}</td><td class="px-6 py-4 text-sm text-slate-400" title="${[...item.sets.dns_server].join(', ')}">${renderSet([...item.sets.dns_server])}</td>`, 'name', 'appliance');
+        }
+
+        // --- UTILITY & HELPER FUNCTIONS ---
+        function aggregateBy(data, key) {
+            const summary = {};
+            data.forEach(row => {
+                const group = row[key];
+                if (!summary[group]) {
+                    summary[group] = { total: 0, failures: 0, total_latency: 0, sets: { target_domain: new Set(), dns_server: new Set() }};
+                    let summaryKey;
+                    if (key === 'target_domain') {
+                        summaryKey = 'domain';
+                    } else if (key === 'dns_server') {
+                        summaryKey = 'server';
+                    } else if (key === 'appliance_name') {
+                        summaryKey = 'name';
+                    } else {
+                        summaryKey = key;
+                    }
+                    summary[group][summaryKey] = group;
+                }
+                const item = summary[group];
+                item.total++;
+                item.total_latency += row.resolution_time_ms;
+                if (row.response_code !== 'NOERROR') item.failures++;
+                item.sets.target_domain.add(row.target_domain);
+                item.sets.dns_server.add(row.dns_server);
+            });
+            for (const group in summary) {
+                const item = summary[group];
+                item.failureRate = item.total ? (item.failures / item.total) * 100 : 0;
+                item.avgLatency = item.total ? item.total_latency / item.total : 0;
+            }
+            return summary;
+        }
+
+        function sortData(data, column, direction) {
+            return [...data].sort((a, b) => {
+                let [aVal, bVal] = [a[column], b[column]];
+                if (typeof aVal === 'string') [aVal, bVal] = [aVal.toLowerCase(), bVal.toLowerCase()];
+                if (aVal < bVal) return direction === 'asc' ? -1 : 1;
+                if (aVal > bVal) return direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+        }
+
+        function updateSortIcons() {
+            document.querySelectorAll('.sortable').forEach(header => {
+                const icon = header.querySelector('.sort-icon');
+                if(!icon) return;
+                header.classList.toggle('sorted', state.sort.column === header.dataset.sort);
+                if (state.sort.column === header.dataset.sort) {
+                    icon.innerHTML = state.sort.direction === 'asc' ? '▲' : '▼';
+                } else {
+                    icon.innerHTML = '';
+                }
+            });
+        }
+        
+        function renderIps(ipsJson, forTitle = false) {
+            try {
+                const ips = JSON.parse(ipsJson);
+                if (forTitle) return ips.join('\n');
+                if (ips.length > 1) return `${ips[0]}, ... (${ips.length})`;
+                return ips.join(', ');
+            } catch(e) { return ipsJson; }
+        }
+        
+        function renderSet(setItems) {
+            if (setItems.length > 2) return `${setItems.slice(0, 2).join(', ')}, ...`;
+            return setItems.join(', ');
+        }
+        
+        function showAllLoaders() { document.querySelectorAll('.view-content').forEach(v => v.innerHTML = '<div class="flex justify-center items-center h-48"><div class="loader"></div></div>'); }
+        
+        function createToast(message, type = 'info') {
+            const colors = { success: 'bg-green-600', error: 'bg-red-600', info: 'bg-blue-600' };
+            const toast = document.createElement('div');
+            toast.className = `toast text-white p-3 rounded-md shadow-lg ${colors[type]}`;
+            toast.textContent = message;
+            document.getElementById('toast-container').appendChild(toast);
+            setTimeout(() => toast.classList.add('show'), 10);
+            setTimeout(() => {
+                toast.classList.remove('show');
+                toast.addEventListener('transitionend', () => toast.remove());
+            }, 5000);
+        }
+    </script>
+</body>
+</html>
+
