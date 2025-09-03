@@ -52,6 +52,16 @@
                     <select id="response-code-filter" class="w-full bg-slate-700 border-slate-600 rounded-md shadow-sm p-2 text-white"></select>
                 </div>
             </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                 <div>
+                    <label for="start-time-filter" class="block text-sm font-medium text-slate-400 mb-1">Start Time</label>
+                    <input type="datetime-local" id="start-time-filter" class="w-full bg-slate-700 border-slate-600 rounded-md shadow-sm p-2 text-white" style="color-scheme: dark;">
+                </div>
+                <div>
+                    <label for="end-time-filter" class="block text-sm font-medium text-slate-400 mb-1">End Time</label>
+                    <input type="datetime-local" id="end-time-filter" class="w-full bg-slate-700 border-slate-600 rounded-md shadow-sm p-2 text-white" style="color-scheme: dark;">
+                </div>
+            </div>
              <div class="mt-4 flex justify-between items-center">
                 <button id="clear-filters-btn" class="text-slate-400 hover:text-white text-sm">Clear Filters</button>
                 <button id="apply-filters-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg">Apply Filters</button>
@@ -111,7 +121,7 @@
         const state = {
             activeView: 'results-log-view',
             sort: { column: 'timestamp', direction: 'desc' },
-            filters: { domain: '', server: '', appliance: '', recordType: '', responseCode: '' },
+            filters: { domain: '', server: '', appliance: '', recordType: '', responseCode: '', startTime: '', endTime: '' },
             fullDataset: [],
             pagination: { currentPage: 1, recordsPerPage: 100 }
         };
@@ -125,8 +135,8 @@
         });
 
         function initializeEventListeners() {
-            document.getElementById('apply-filters-btn').addEventListener('click', () => { updateFiltersFromUI(); state.pagination.currentPage = 1; renderAllViews(); });
-            document.getElementById('clear-filters-btn').addEventListener('click', () => { clearFiltersAndRender(); state.pagination.currentPage = 1; renderAllViews(); });
+            document.getElementById('apply-filters-btn').addEventListener('click', applyFiltersAndRefetch);
+            document.getElementById('clear-filters-btn').addEventListener('click', clearFiltersAndRefetch);
             document.querySelectorAll('.tab-btn').forEach(button => button.addEventListener('click', handleTabClick));
             
             document.getElementById('settings-btn').addEventListener('click', openSettingsModal);
@@ -147,6 +157,25 @@
             });
         }
 
+        async function applyFiltersAndRefetch() {
+            updateFiltersFromUI();
+            state.pagination.currentPage = 1;
+            showAllLoaders();
+            await fetchData();
+            // Note: We don't re-populate dropdowns here to avoid removing options
+            renderAllViews();
+        }
+
+        async function clearFiltersAndRefetch() {
+            clearFiltersAndRender(); // this clears state and UI
+            state.pagination.currentPage = 1;
+            showAllLoaders();
+            await fetchData();
+            // Re-populating filters might be desired after a full clear
+            populateFilters(state.fullDataset);
+            renderAllViews();
+        }
+
         function initializeViews() {
             viewContainer.innerHTML = `
                 <div id="results-log-view" class="view-content bg-slate-800 p-4 rounded-lg shadow-lg overflow-x-auto"></div>
@@ -165,6 +194,8 @@
             showAllLoaders();
             await loadSettings();
             await fetchData();
+            // We only want to populate the dropdown filters on the initial load,
+            // not after applying a time filter which might narrow down the options undesirably.
             populateFilters(state.fullDataset);
             state.pagination.currentPage = 1;
             renderAllViews();
@@ -172,7 +203,18 @@
 
         async function fetchData() {
             try {
-                const response = await fetch('/api/data');
+                const params = new URLSearchParams();
+                if (state.filters.startTime) {
+                    // Convert local datetime string to Unix timestamp in seconds
+                    params.append('start', Math.floor(new Date(state.filters.startTime).getTime() / 1000));
+                }
+                if (state.filters.endTime) {
+                    params.append('end', Math.floor(new Date(state.filters.endTime).getTime() / 1000));
+                }
+
+                const url = `/api/data?${params.toString()}`;
+                const response = await fetch(url);
+
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 state.fullDataset = await response.json();
             } catch (error) {
@@ -259,13 +301,15 @@
                 server: document.getElementById('server-filter').value,
                 appliance: document.getElementById('appliance-filter').value,
                 recordType: document.getElementById('record-type-filter').value,
-                responseCode: document.getElementById('response-code-filter').value
+                responseCode: document.getElementById('response-code-filter').value,
+                startTime: document.getElementById('start-time-filter').value,
+                endTime: document.getElementById('end-time-filter').value
             };
         }
 
         function updateUIFromFilters() {
             for (const key in state.filters) {
-                const elementId = `${key.replace('recordType', 'record-type').replace('responseCode', 'response-code')}-filter`;
+                const elementId = `${key.replace('recordType', 'record-type').replace('responseCode', 'response-code').replace('startTime', 'start-time').replace('endTime', 'end-time')}-filter`;
                 const element = document.getElementById(elementId);
                 if (element) {
                     element.value = state.filters[key];
@@ -276,7 +320,7 @@
         }
 
         function clearFiltersAndRender() {
-            state.filters = { domain: '', server: '', appliance: '', recordType: '', responseCode: '' };
+            state.filters = { domain: '', server: '', appliance: '', recordType: '', responseCode: '', startTime: '', endTime: '' };
             updateUIFromFilters();
         }
 
@@ -345,7 +389,9 @@
         function renderAllViews() {
             let data = state.fullDataset.filter(row => 
                 Object.entries(state.filters).every(([key, value]) => {
-                    if (value === '') return true;
+                    // Time range is filtered server-side, so we ignore those keys here.
+                    if (value === '' || key === 'startTime' || key === 'endTime') return true;
+
                     const rowKey = key.replace('appliance','appliance_name').replace('recordType','record_type').replace('responseCode','response_code').replace('domain','target_domain').replace('server','dns_server');
                     if (value === 'FAILED') return row.response_code !== 'NOERROR';
                     return row[rowKey] === value;

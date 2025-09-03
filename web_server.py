@@ -78,11 +78,19 @@ def handle_config():
     return jsonify(config)
 
 @app.route('/api/data', methods=['GET'])
-def get_all_data():
-    """Retrieves all transformed DNS records from the database."""
+def get_data():
+    """Retrieves transformed DNS records from the database, with optional time filters."""
     try:
-        records = ingestion_service.get_all_records_from_db()
+        start_time_str = request.args.get('start')
+        end_time_str = request.args.get('end')
+
+        start_time = int(start_time_str) if start_time_str else None
+        end_time = int(end_time_str) if end_time_str else None
+
+        records = ingestion_service.get_records_from_db(start_time, end_time)
         return jsonify(records)
+    except ValueError:
+        return jsonify({"error": "Invalid timestamp format. Please use Unix timestamps."}), 400
     except Exception as e:
         logging.error(f"Failed to retrieve data from database: {e}", exc_info=True)
         return jsonify({"error": "Could not retrieve data from the database."}), 500

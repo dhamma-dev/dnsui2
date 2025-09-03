@@ -35,12 +35,29 @@ def initialize_database():
         ''')
         conn.commit()
 
-def get_all_records_from_db():
-    """Fetches all DNS records and returns them as a list of dictionaries."""
+def get_records_from_db(start_time=None, end_time=None):
+    """Fetches DNS records from the database, with an optional time range filter."""
     with sqlite3.connect(DB_FILE) as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM dns_records ORDER BY timestamp DESC")
+
+        query = "SELECT * FROM dns_records"
+        params = []
+
+        conditions = []
+        if start_time:
+            conditions.append("timestamp >= ?")
+            params.append(start_time)
+        if end_time:
+            conditions.append("timestamp <= ?")
+            params.append(end_time)
+
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+
+        query += " ORDER BY timestamp DESC"
+
+        cursor.execute(query, params)
         rows = cursor.fetchall()
         return [dict(row) for row in rows]
 
